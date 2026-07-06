@@ -1,0 +1,73 @@
+name: JC SP Daily Scraper
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_date:
+        description: '开始日期，例如 2026-07-01。留空则默认抓昨天到今天。'
+        required: false
+        default: ''
+      end_date:
+        description: '结束日期，例如 2026-07-05。留空则默认抓今天。'
+        required: false
+        default: ''
+  schedule:
+    - cron: '30 15 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r jc_sp_agent_requirements.txt
+
+      - name: Install Playwright Chromium
+        run: |
+          python -m playwright install --with-deps chromium
+
+      - name: Decide date range
+        id: dates
+        shell: bash
+        run: |
+          START="${{ github.event.inputs.start_date }}"
+          END="${{ github.event.inputs.end_date }}"
+          if [ -z "$START" ]; then START=$(date -u -d "yesterday" +%F); fi
+          if [ -z "$END" ]; then END=$(date -u +%F); fi
+          echo "start=$START" >> "$GITHUB_OUTPUT"
+          echo "end=$END" >> "$GITHUB_OUTPUT"
+          echo "Using date range: $START to $END"
+
+      - name: Run scraper
+        run: |
+          mkdir -p output
+          python jc_sp_agent_browser_scraper.py \
+            --start "${{ steps.dates.outputs.start }}" \
+            --end "${{ steps.dates.outputs.end }}" \
+            --source 500 \
+            --out "output/jc_sp_${{ steps.dates.outputs.start }}_${{ steps.dates.outputs.end }}.csv" \
+            --sleep-min 2 \
+            --sleep-max 6
+
+      - name: Upload CSV and debug pages
+        uses: actions/upload-artifact@v4
+        with:
+          name: jc-sp-data-${{ steps.dates.outputs.start }}-${{ steps.dates.outputs.end }}
+          path: |
+            output/*.csv
+            debug_pages/**
+          if-no-files-found: warn
