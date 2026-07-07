@@ -15,7 +15,7 @@ on:
     - cron: '30 15 * * *'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   scrape:
@@ -54,20 +54,35 @@ jobs:
 
       - name: Run scraper
         run: |
-          mkdir -p output
+          mkdir -p data
           python jc_sp_agent_browser_scraper.py \
             --start "${{ steps.dates.outputs.start }}" \
             --end "${{ steps.dates.outputs.end }}" \
             --source 500 \
-            --out "output/jc_sp_${{ steps.dates.outputs.start }}_${{ steps.dates.outputs.end }}.csv" \
+            --out "data/jc_sp_${{ steps.dates.outputs.start }}_${{ steps.dates.outputs.end }}.csv" \
             --sleep-min 2 \
             --sleep-max 6
+
+      - name: Save debug pages if any
+        run: |
+          if [ -d debug_pages ]; then
+            mkdir -p data/debug_pages
+            cp -r debug_pages/* data/debug_pages/ || true
+          fi
+
+      - name: Commit CSV back to repository
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/
+          git commit -m "Add JC SP data ${{ steps.dates.outputs.start }} to ${{ steps.dates.outputs.end }}" || echo "No changes to commit"
+          git push
 
       - name: Upload CSV and debug pages
         uses: actions/upload-artifact@v4
         with:
           name: jc-sp-data-${{ steps.dates.outputs.start }}-${{ steps.dates.outputs.end }}
           path: |
-            output/*.csv
-            debug_pages/**
+            data/*.csv
+            data/debug_pages/**
           if-no-files-found: warn
